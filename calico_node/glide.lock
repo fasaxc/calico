@@ -1,5 +1,5 @@
-hash: 210b8875ca7b767d5cfe713707ae15ac6ab3541a0a845ac11051dbef3d5b4169
-updated: 2017-11-16T12:55:24.590977209-08:00
+hash: 3a3ccdbf7fcf8c0c6b72031a7dcf6f64fdcf81401e740cd2b67906332f028fe7
+updated: 2017-11-17T11:40:07.203157551Z
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -18,7 +18,7 @@ imports:
   subpackages:
   - quantile
 - name: github.com/coreos/etcd
-  version: f1d7dd87da3e8feab4aaf675b8e29c6a5ed5f58b
+  version: 694728c496e22dfa5719c78ff23cc982e15bcb2f
   subpackages:
   - auth/authpb
   - client
@@ -61,6 +61,7 @@ imports:
   version: 4bd1920723d7b7c925de087aa32e2187708897f7
   subpackages:
   - proto
+  - protoc-gen-go/descriptor
   - ptypes
   - ptypes/any
   - ptypes/duration
@@ -151,6 +152,11 @@ imports:
   version: ca53cad383cad2479bbba7f7a1a05797ec1386e4
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
+- name: github.com/projectcalico/calico
+  version: 72e2b4a8d71d1c51a56b170b48052d8aa8667a0e
+  subpackages:
+  - calico_node/calicoclient
+  - calico_node/startup/autodetection
 - name: github.com/projectcalico/go-json
   version: 6219dc7339ba20ee4c57df0a8baac62317d19cb1
   subpackages:
@@ -160,7 +166,7 @@ imports:
 - name: github.com/projectcalico/go-yaml-wrapper
   version: 598e54215bee41a19677faa4f0c32acd2a87eb56
 - name: github.com/projectcalico/libcalico-go
-  version: 6e3a4cab8ca4d6c3c73855ae9ee40fdc43fed95a
+  version: 69516f55f1dad6071c5bfe4a67cdd11fcee2aff9
   subpackages:
   - lib/api
   - lib/apiconfig
@@ -202,7 +208,7 @@ imports:
   subpackages:
   - prometheus
 - name: github.com/prometheus/client_model
-  version: 6f3806018612930941127f2a7c6c453ba2c527d2
+  version: 99fa1f4be8e564e8a6b613da7fa6f46c9edafc6c
   subpackages:
   - go
 - name: github.com/prometheus/common
@@ -252,7 +258,7 @@ imports:
   - jws
   - jwt
 - name: golang.org/x/sys
-  version: e48874b42435b4347fc52bdee0424a52abc974d7
+  version: 314a259e304ff91bd6985da2a7149bbf91237993
   subpackages:
   - unix
   - windows
@@ -293,18 +299,30 @@ imports:
   - internal/remote_api
   - internal/urlfetch
   - urlfetch
-- name: google.golang.org/grpc
-  version: 8050b9cbc271307e5a716a9d782803d09b0d6f2d
+- name: google.golang.org/genproto
+  version: 09f6ed296fc66555a25fe4ce95173148778dfa85
   subpackages:
+  - googleapis/api/annotations
+  - googleapis/rpc/status
+- name: google.golang.org/grpc
+  version: 401e0e00e4bb830a10496d64cd95e068c5bf50de
+  subpackages:
+  - balancer
   - codes
+  - connectivity
   - credentials
+  - grpclb/grpc_lb_v1/messages
   - grpclog
+  - health
+  - health/grpc_health_v1
   - internal
   - keepalive
   - metadata
   - naming
   - peer
+  - resolver
   - stats
+  - status
   - tap
   - transport
 - name: gopkg.in/go-playground/validator.v8
