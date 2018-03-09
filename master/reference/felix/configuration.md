@@ -4,7 +4,7 @@ canonical_url: 'https://docs.projectcalico.org/v3.0/reference/felix/configuratio
 ---
 
 Configuration for Felix is read from one of four possible locations, in
-order, as follows. 
+order, as follows.
 
 1.  Environment variables.
 2.  The Felix configuration file.
@@ -12,16 +12,16 @@ order, as follows.
 4.  The global `FelixConfiguration` resource (`default`).
 
 The value of any configuration parameter is the value read from the
-*first* location containing a value. For example, if an environment variable 
+*first* location containing a value. For example, if an environment variable
 contains a value, it takes top precedence.
 
-If not set in any of these locations, most configuration parameters have 
+If not set in any of these locations, most configuration parameters have
 defaults, and it should be rare to have to explicitly set them.
 
 The full list of parameters which can be set is as follows.
 
-> **Note**: The following tables detail the configuration file and 
-> environment variable parameters. For `FelixConfiguration` resource settings, 
+> **Note**: The following tables detail the configuration file and
+> environment variable parameters. For `FelixConfiguration` resource settings,
 > refer to [Felix Configuration Resource](../calicoctl/resources/felixconfig).
 {: .alert .alert-info}
 
@@ -61,7 +61,7 @@ The full list of parameters which can be set is as follows.
 
 #### Kubernetes datastore configuration
 
-The Kubernetes datastore driver reads its configuration from Kubernetes-provided environment variables. 
+The Kubernetes datastore driver reads its configuration from Kubernetes-provided environment variables.
 
 #### iptables dataplane configuration
 
@@ -90,12 +90,12 @@ The Kubernetes datastore driver reads its configuration from Kubernetes-provided
 
 | Configuration parameter | Environment variable       | Description  | Schema |
 | ------------------------|----------------------------| ------------ | ------ |
-| `KubeNodePortRanges`    | `FELIX_KUBENODEPORTRANGES` | A list of port ranges that Felix should treat as Kubernetes node ports.  Only when `kube-proxy` is configured to use IPVS mode:  Felix assumes that traffic arriving at the host one one of these ports will ultimately be forwarded instead of being terminated by a host process.  [Default: `30000:32767`]  | Comma-delimited list of `<min>:<max>` port ranges or single ports. |
+| `KubeNodePortRanges`    | `FELIX_KUBENODEPORTRANGES` | A list of port ranges that Felix should treat as Kubernetes node ports.  Only when `kube-proxy` is configured to use IPVS mode:  Felix assumes that traffic arriving at the host one one of these ports will ultimately be forwarded instead of being terminated by a host process.  [Default: `30000:32767`] <a id="ipvs-portranges"></a>  | Comma-delimited list of `<min>:<max>` port ranges or single ports. |
 
 
-> **Note**: <a id="ipvs-bits"></a> When using Calico with Kubernetes' `kube-proxy` in IPVS mode, Calico uses additional iptables mark bits to store an ID for each local Calico endpoint.  
+> **Note**: <a id="ipvs-bits"></a> When using Calico with Kubernetes' `kube-proxy` in IPVS mode, Calico uses additional iptables mark bits to store an ID for each local Calico endpoint.
 > For example, the default `IptablesMarkMask` value, `0xffff0000` gives Calico 16 bits, up to 6 of which are used for internal purposes, leaving 10 bits for endpoint IDs.
-> 10 bits is enough for 1024 different values and Calico uses 2 of those for internal purposes, leaving enough for 1022 endpoints on the host. 
+> 10 bits is enough for 1024 different values and Calico uses 2 of those for internal purposes, leaving enough for 1022 endpoints on the host.
 {: .alert .alert-info}
 
 
