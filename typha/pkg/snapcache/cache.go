@@ -138,6 +138,8 @@ type Cache struct {
 	// currentBreadcrumb points to the most recent Breadcrumb, which contains the most recent snapshot of kvs.
 	// As described above, we use an unsafe.Pointer so we can do opportunistic atomic reads of the value to avoid
 	// blocking.
+	// +checklocks:breadcrumbCond.L
+	// +checkatomic
 	currentBreadcrumb unsafe.Pointer
 
 	wakeUpTicker *jitter.Ticker
@@ -234,7 +236,7 @@ func New(config Config) *Cache {
 
 	snap := &Breadcrumb{
 		Timestamp:                 time.Now(),
-		nextCond:                  cond,
+		cache:                     c,
 		KVs:                       kvs.Clone(),
 		counterBreadcrumbBlock:    c.counterBreadcrumbBlock,
 		counterBreadcrumbNonBlock: c.counterBreadcrumbNonBlock,
@@ -390,7 +392,7 @@ func (c *Cache) publishBreadcrumb() {
 		SequenceNumber: oldCrumb.SequenceNumber + 1,
 		Timestamp:      time.Now(),
 		SyncStatus:     oldCrumb.SyncStatus,
-		nextCond:       c.breadcrumbCond,
+		cache:          c,
 		Deltas:         make([]syncproto.SerializedUpdate, 0, len(updates)),
 
 		counterBreadcrumbBlock:    c.counterBreadcrumbBlock,
@@ -460,8 +462,7 @@ func (c *Cache) publishBreadcrumb() {
 	log.WithField("seqNo", oldCrumb.SequenceNumber).Debug("Acquiring Breadcrumb lock")
 	c.breadcrumbCond.L.Lock()
 	log.WithField("seqNo", oldCrumb.SequenceNumber).Debug("Acquired Breadcrumb lock")
-	atomic.StorePointer(&(oldCrumb.next), (unsafe.Pointer)(newCrumb))
-	atomic.StorePointer(&c.currentBreadcrumb, (unsafe.Pointer)(newCrumb))
+	c.storePointersLockHeld(oldCrumb, newCrumb)
 	c.breadcrumbCond.L.Unlock()
 	// Then wake up any watching clients.  Note: Go's Cond doesn't require us to hold the lock
 	// while calling Broadcast.
@@ -469,6 +470,14 @@ func (c *Cache) publishBreadcrumb() {
 	c.breadcrumbCond.Broadcast()
 	c.lastBroadcast = time.Now()
 	c.gaugeCurrentSequenceNumber.Set(float64(newCrumb.SequenceNumber))
+}
+
+// +checklocks:c.breadcrumbCond.L
+// +checklocksalias:oldCrumb.cache.breadcrumbCond.L=c.breadcrumbCond.L
+// +checklocksalias:newCrumb.cache.breadcrumbCond.L=c.breadcrumbCond.L
+func (c *Cache) storePointersLockHeld(oldCrumb *Breadcrumb, newCrumb *Breadcrumb) {
+	atomic.StorePointer(&(oldCrumb.next), (unsafe.Pointer)(newCrumb))
+	atomic.StorePointer(&c.currentBreadcrumb, (unsafe.Pointer)(newCrumb))
 }
 
 type Breadcrumb struct {
@@ -479,8 +488,10 @@ type Breadcrumb struct {
 	Deltas     []syncproto.SerializedUpdate
 	SyncStatus api.SyncStatus
 
-	nextCond *sync.Cond
-	next     unsafe.Pointer
+	cache *Cache
+	// +checklocks:cache.breadcrumbCond.L
+	// +checkatomic
+	next unsafe.Pointer
 
 	counterBreadcrumbNonBlock prometheus.Counter
 	counterBreadcrumbBlock    prometheus.Counter
@@ -496,15 +507,15 @@ func (b *Breadcrumb) Next(ctx context.Context) (*Breadcrumb, error) {
 	}
 
 	// Next snapshot isn't available yet, block on the condition variable and wait for it.
-	b.nextCond.L.Lock()
+	b.cache.breadcrumbCond.L.Lock()
 	for ctx.Err() == nil {
 		next = b.loadNext()
 		if next != nil {
 			break
 		}
-		b.nextCond.Wait()
+		b.cache.breadcrumbCond.Wait()
 	}
-	b.nextCond.L.Unlock()
+	b.cache.breadcrumbCond.L.Unlock()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

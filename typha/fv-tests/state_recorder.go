@@ -43,11 +43,17 @@ func NewRecorderChanSize(n int) *StateRecorder {
 //
 //	Eventually(recorder.State).Should(Equal(...))
 type StateRecorder struct {
-	L             sync.Mutex
-	status        api.SyncStatus
-	kvs           map[string]api.Update
-	err           error
-	blockAfter    int
+	L sync.Mutex
+
+	// +checklocks:L
+	status api.SyncStatus
+	// +checklocks:L
+	kvs map[string]api.Update
+	// +checklocks:L
+	err error
+	// +checklocks:L
+	blockAfter int
+	// +checklocks:L
 	blockDuration time.Duration
 
 	c chan any
@@ -120,9 +126,10 @@ func (r *StateRecorder) handleUpdates(updates []api.Update) {
 		if r.blockAfter > 0 {
 			r.blockAfter--
 			if r.blockAfter == 0 {
-				logrus.WithField("duration", r.blockDuration).Info("----- Recorder about to block")
+				duration := r.blockDuration
+				logrus.WithField("duration", duration).Info("----- Recorder about to block")
 				r.L.Unlock()
-				time.Sleep(r.blockDuration)
+				time.Sleep(duration)
 				r.L.Lock()
 				logrus.Info("----- Recorder woke up")
 			}

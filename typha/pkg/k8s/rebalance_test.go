@@ -112,7 +112,8 @@ var _ = Describe("Poll loop tests", func() {
 })
 
 type dummyServer struct {
-	L       sync.Mutex
+	L sync.Mutex
+	// +checklocks:L
 	targets []int
 }
 

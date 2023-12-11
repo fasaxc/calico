@@ -67,17 +67,19 @@ type SnappySnapshotCache struct {
 	snapValidityTimeout time.Duration
 	logCtx              *logrus.Entry
 
-	cache BreadcrumbProvider
+	cache BreadcrumbProvider // +checklocksignore: used with lock but does its own locking.
 
-	lock           sync.Mutex
-	cond           sync.Cond
+	lock sync.Mutex
+	cond sync.Cond
+	// +checklocks:lock
 	activeSnapshot *snapshot
-	lastSnapSize   int
+	// +checklocks:lock
+	lastSnapSize int
 
-	counterBinSnapsGenerated prometheus.Counter
-	counterBinSnapsReused    prometheus.Counter
-	gaugeSnapBytesRaw        prometheus.Gauge
-	gaugeSnapBytesComp       prometheus.Gauge
+	counterBinSnapsGenerated prometheus.Counter // +checklocksignore: used with lock but not needed
+	counterBinSnapsReused    prometheus.Counter // +checklocksignore: used with lock but not needed
+	gaugeSnapBytesRaw        prometheus.Gauge   // +checklocksignore: used with lock but not needed
+	gaugeSnapBytesComp       prometheus.Gauge   // +checklocksignore: used with lock but not needed
 
 	writeTimeout time.Duration
 }

@@ -49,6 +49,7 @@ var _ = Describe("Daemon", func() {
 	var datastore *mockDatastore
 	var newClientErr error
 	var flagMutex sync.Mutex
+	// +checklocks:flagMutex
 	var earlyLoggingConfigured, loggingConfigured bool
 
 	BeforeEach(func() {
@@ -241,13 +242,19 @@ var _ = Describe("Daemon", func() {
 })
 
 type mockDatastore struct {
-	mutex                        sync.Mutex
+	mutex sync.Mutex
+	// +checklocks:mutex
 	allocateTunnelIpSyncerCalled bool
-	bgpSyncerCalled              bool
-	felixSyncerCalled            bool
-	nodestatusSyncerCalled       bool
-	initCalled                   int
-	failInit                     bool
+	// +checklocks:mutex
+	bgpSyncerCalled bool
+	// +checklocks:mutex
+	felixSyncerCalled bool
+	// +checklocks:mutex
+	nodestatusSyncerCalled bool
+	// +checklocks:mutex
+	initCalled int
+	// +checklocks:mutex
+	failInit bool
 }
 
 func (b *mockDatastore) FelixSyncerByIface(callbacks bapi.SyncerCallbacks) bapi.Syncer {

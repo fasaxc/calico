@@ -119,8 +119,11 @@ type Server struct {
 
 	lock sync.Mutex
 
+	// +checklocks:lock
 	shuttingDown bool
 	shutdownC    chan struct{}
+
+	// +checklocks:lock
 	connIDToConn map[uint64]*connection
 
 	perSyncerConnMetrics map[syncproto.SyncerType]perSyncerConnMetrics

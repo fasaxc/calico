@@ -44,9 +44,11 @@ type healthRecord struct {
 }
 
 type healthRecorder struct {
-	expectedName string
-	lock         sync.Mutex
-	reports      []healthRecord
+	expectedName string // +checklocksignore
+
+	lock sync.Mutex
+	// +checklocks:lock
+	reports []healthRecord
 }
 
 func (r *healthRecorder) RegisterReporter(name string, reports *health.HealthReport, timeout time.Duration) {

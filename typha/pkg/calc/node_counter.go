@@ -32,8 +32,10 @@ func NewNodeCounter(sink api.SyncerCallbacks) *NodeCounter {
 
 type NodeCounter struct {
 	sync.Mutex
-	sink    api.SyncerCallbacks
-	inSync  bool
+	sink api.SyncerCallbacks
+	// +checklocks:Mutex
+	inSync bool
+	// +checklocks:Mutex
 	nodeMap map[string]bool
 }
 
