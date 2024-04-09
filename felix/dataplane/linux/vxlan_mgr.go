@@ -176,7 +176,8 @@ func newVXLANManager(
 		dpConfig,
 		nlHandle,
 		ipVersion,
-		func(interfaceRegexes []string,
+		func(
+			interfaceRegexes []string,
 			ipVersion uint8,
 			netlinkTimeout time.Duration,
 			deviceRouteSourceAddress net.IP,
@@ -199,8 +200,10 @@ func newVXLANManagerWithShims(
 	dpConfig Config,
 	nlHandle netlinkHandle,
 	ipVersion uint8,
-	noEncapRTConstruct func(interfacePrefixes []string, ipVersion uint8, netlinkTimeout time.Duration,
-		deviceRouteSourceAddress net.IP, deviceRouteProtocol netlink.RouteProtocol, removeExternalRoutes bool) routetable.RouteTableInterface,
+	noEncapRTConstruct func(
+		interfacePrefixes []string, ipVersion uint8, netlinkTimeout time.Duration,
+		deviceRouteSourceAddress net.IP, deviceRouteProtocol netlink.RouteProtocol, removeExternalRoutes bool,
+	) routetable.RouteTableInterface,
 ) *vxlanManager {
 	noEncapProtocol := defaultVXLANProto
 	if dpConfig.DeviceRouteProtocol != syscall.RTPROT_BOOT {
@@ -257,7 +260,9 @@ func (m *vxlanManager) OnUpdate(protoBufMsg interface{}) {
 		m.deleteRoute(msg.Dst)
 
 		// Process remote IPAM blocks.
-		if msg.Type == proto.RouteType_REMOTE_WORKLOAD && msg.IpPoolType == proto.IPPoolType_VXLAN {
+		if msg.IpPoolType == proto.IPPoolType_VXLAN &&
+			(msg.Type == proto.RouteType_REMOTE_WORKLOAD ||
+				(msg.Type == proto.RouteType_REMOTE_TUNNEL && msg.Borrowed)) {
 			m.logCtx.WithField("msg", msg).Debug("VXLAN data plane received route update")
 			m.routesByDest[msg.Dst] = msg
 			m.routesDirty = true
@@ -580,7 +585,13 @@ func (m *vxlanManager) OnParentNameUpdate(name string) {
 
 // KeepVXLANDeviceInSync is a goroutine that configures the VXLAN tunnel device, then periodically
 // checks that it is still correctly configured.
-func (m *vxlanManager) KeepVXLANDeviceInSync(ctx context.Context, mtu int, xsumBroken bool, wait time.Duration, parentNameC chan string) {
+func (m *vxlanManager) KeepVXLANDeviceInSync(
+	ctx context.Context,
+	mtu int,
+	xsumBroken bool,
+	wait time.Duration,
+	parentNameC chan string,
+) {
 	m.logCtx.WithFields(logrus.Fields{
 		"mtu":        mtu,
 		"xsumBroken": xsumBroken,
@@ -681,7 +692,11 @@ func (m *vxlanManager) getParentInterface(localVTEP *proto.VXLANTunnelEndpointUp
 }
 
 // configureVXLANDevice ensures the VXLAN tunnel device is up and configured correctly.
-func (m *vxlanManager) configureVXLANDevice(mtu int, localVTEP *proto.VXLANTunnelEndpointUpdate, xsumBroken bool) error {
+func (m *vxlanManager) configureVXLANDevice(
+	mtu int,
+	localVTEP *proto.VXLANTunnelEndpointUpdate,
+	xsumBroken bool,
+) error {
 	logCtx := m.logCtx.WithFields(logrus.Fields{"device": m.vxlanDevice})
 	logCtx.Debug("Configuring VXLAN tunnel device")
 	parent, err := m.getParentInterface(localVTEP)
