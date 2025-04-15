@@ -68,18 +68,14 @@ type itemData struct {
 	parents []*parentData
 }
 
-func (itemData *itemData) GetHandle(labelName unique.Handle[string]) (handle unique.Handle[string], present bool) {
-	return itemData.labels.GetHandle(labelName)
-}
-
-// Get implements the Labels interface for itemData.  Combines the item's own labels with those
+// GetHandle implements the Labels interface for itemData.  Combines the item's own labels with those
 // of its parents on the fly.
-func (itemData *itemData) Get(labelName string) (value string, present bool) {
-	if value, present = itemData.labels.GetString(labelName); present {
+func (itemData *itemData) GetHandle(labelName unique.Handle[string]) (handle unique.Handle[string], present bool) {
+	if handle, present = itemData.labels.GetHandle(labelName); present {
 		return
 	}
 	for _, parent := range itemData.parents {
-		if value, present = parent.labels[labelName]; present {
+		if handle, present = parent.labels.GetHandle(labelName); present {
 			return
 		}
 	}
@@ -91,7 +87,7 @@ func (itemData *itemData) Get(labelName string) (value string, present bool) {
 // have partial information.
 type parentData struct {
 	id      string
-	labels  map[string]string
+	labels  internedlabels.InternedLabels
 	itemIDs set.Set[any]
 }
 
@@ -270,7 +266,7 @@ func (idx *InheritIndex) discardParentIfEmpty(id string) {
 	if parent == nil {
 		return
 	}
-	if parent.itemIDs == nil && parent.labels == nil {
+	if parent.itemIDs == nil && parent.labels.IsNil() {
 		delete(idx.parentDataByParentID, id)
 	}
 }
@@ -311,7 +307,7 @@ func (idx *InheritIndex) onItemParentsUpdate(id interface{}, oldParents, newPare
 
 func (idx *InheritIndex) UpdateParentLabels(parentID string, labels map[string]string) {
 	parent := idx.getOrCreateParent(parentID)
-	parent.labels = labels
+	parent.labels = internedlabels.Make(labels) // FIXME intern further upstream?
 	idx.flushChildren(parentID)
 }
 
@@ -320,7 +316,7 @@ func (idx *InheritIndex) DeleteParentLabels(parentID string) {
 	if parent == nil {
 		return
 	}
-	parent.labels = nil
+	parent.labels = internedlabels.InternedLabels{}
 	idx.discardParentIfEmpty(parentID)
 	idx.flushChildren(parentID)
 }

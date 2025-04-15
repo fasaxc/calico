@@ -28,14 +28,9 @@ type Labels interface {
 	GetHandle(labelName unique.Handle[string]) (handle unique.Handle[string], present bool)
 }
 
-// MapAsLabels allows you use map as labels
+// MapAsLabels allows you use a string map as the Labels interface.
+// Useful for testing.
 type MapAsLabels map[string]string
-
-// Get returns the value and presence of the given labelName key in the MapAsLabels
-func (l MapAsLabels) Get(LabelName string) (value string, present bool) {
-	value, present = l[LabelName]
-	return
-}
 
 func (l MapAsLabels) GetHandle(labelName unique.Handle[string]) (handle unique.Handle[string], present bool) {
 	value, present := l[labelName.Value()]
@@ -131,6 +126,8 @@ type selectorRoot struct {
 	cachedLabelRestrictions *map[unique.Handle[string]]LabelRestriction
 }
 
+// Evaluate the selector against the given labels map.
+// Deprecated: use EvaluateLabels instead. Evaluate is slow because it calculates unique.Handles on the fly.
 func (sel *selectorRoot) Evaluate(labels map[string]string) bool {
 	return sel.EvaluateLabels(MapAsLabels(labels))
 }

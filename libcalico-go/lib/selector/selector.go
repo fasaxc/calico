@@ -39,6 +39,7 @@ func init() {
 // Selector represents a label selector.
 type Selector interface {
 	// Evaluate evaluates the selector against the given labels expressed as a concrete map.
+	// Deprecated: use EvaluateLabels instead.
 	Evaluate(labels map[string]string) bool
 
 	// EvaluateLabels evaluates the selector against the given labels expressed as an interface.
