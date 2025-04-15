@@ -171,3 +171,7 @@ func (i *InternedLabels) Len() int {
 	}
 	return len(*i.m)
 }
+
+func (i InternedLabels) IsNil() bool {
+	return i.m == nil
+}

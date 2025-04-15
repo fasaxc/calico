@@ -17,6 +17,7 @@ package labelnamevalueindex
 import (
 	"fmt"
 	"iter"
+	"unique"
 
 	"github.com/sirupsen/logrus"
 
@@ -38,23 +39,23 @@ import (
 type LabelNameValueIndex[ItemID comparable, Item Labeled] struct {
 	nameOfTrackedItems    string
 	allItems              map[ItemID]Item
-	labelNameToValueToIDs map[string]values[ItemID]
+	labelNameToValueToIDs map[unique.Handle[string]]values[ItemID]
 }
 
 type Labeled interface {
-	OwnLabels() iter.Seq2[string, string]
+	OwnLabelHandles() iter.Seq2[unique.Handle[string], unique.Handle[string]]
 }
 
 func New[ItemID comparable, Item Labeled](nameOfTrackedItems string) *LabelNameValueIndex[ItemID, Item] {
 	return &LabelNameValueIndex[ItemID, Item]{
 		nameOfTrackedItems:    nameOfTrackedItems,
 		allItems:              map[ItemID]Item{},
-		labelNameToValueToIDs: map[string]values[ItemID]{},
+		labelNameToValueToIDs: map[unique.Handle[string]]values[ItemID]{},
 	}
 }
 
 type values[ItemID comparable] struct {
-	m     map[string]set.Set[ItemID]
+	m     map[unique.Handle[string]]set.Set[ItemID]
 	count int
 }
 
@@ -72,11 +73,11 @@ func (idx *LabelNameValueIndex[ItemID, Item]) Add(id ItemID, item Item) {
 		}).Panic("Add called for ID that is already in the index.")
 	}
 	idx.allItems[id] = item
-	for k, v := range item.OwnLabels() {
+	for k, v := range item.OwnLabelHandles() {
 		vals, ok := idx.labelNameToValueToIDs[k]
 		if !ok {
 			vals = values[ItemID]{
-				m: map[string]set.Set[ItemID]{},
+				m: map[unique.Handle[string]]set.Set[ItemID]{},
 			}
 			idx.labelNameToValueToIDs[k] = vals
 		}
@@ -96,7 +97,7 @@ func (idx *LabelNameValueIndex[ItemID, Item]) Add(id ItemID, item Item) {
 // are not mutated between Add and Remove calls.
 func (idx *LabelNameValueIndex[ItemID, Item]) Remove(id ItemID) {
 	v := idx.allItems[id]
-	for k, v := range v.OwnLabels() {
+	for k, v := range v.OwnLabelHandles() {
 		vals := idx.labelNameToValueToIDs[k]
 		setOfIDs := vals.m[v]
 		setOfIDs.Discard(id)
@@ -117,7 +118,7 @@ func (idx *LabelNameValueIndex[ItemID, Item]) Remove(id ItemID) {
 // label name and selector LabelRestriction (which should be the restriction
 // for that label).  If the LabelRestriction is not "useful", returns
 // FullScanStrategy().
-func (idx *LabelNameValueIndex[ItemID, Item]) StrategyFor(labelName string, r parser.LabelRestriction) ScanStrategy[ItemID] {
+func (idx *LabelNameValueIndex[ItemID, Item]) StrategyFor(labelName unique.Handle[string], r parser.LabelRestriction) ScanStrategy[ItemID] {
 	if !r.MustBePresent {
 		// Not much we can do if the selector doesn't match on this label.
 		return FullScanStrategy[ItemID, Item]{allItems: idx.allItems}
@@ -127,10 +128,10 @@ func (idx *LabelNameValueIndex[ItemID, Item]) StrategyFor(labelName string, r pa
 		// A selector such as "has(labelName)", which matches the label but
 		// not any particular value.
 		if vals, ok := idx.labelNameToValueToIDs[labelName]; !ok {
-			logrus.Debugf("Found no matches for %s with %s=<any>", idx.nameOfTrackedItems, labelName)
+			logrus.Debugf("Found no matches for %s with %s=<any>", idx.nameOfTrackedItems, labelName.Value())
 			return NoMatchStrategy[ItemID]{}
 		} else {
-			logrus.Debugf("Found %d %s with %s=<any>", vals.count, idx.nameOfTrackedItems, labelName)
+			logrus.Debugf("Found %d %s with %s=<any>", vals.count, idx.nameOfTrackedItems, labelName.Value())
 			return LabelNameStrategy[ItemID]{label: labelName, values: vals}
 		}
 	}
@@ -138,7 +139,7 @@ func (idx *LabelNameValueIndex[ItemID, Item]) StrategyFor(labelName string, r pa
 	// If we get here, then the selector does match on this label, and it cares
 	// about specific values. Whittle down the list of values to the ones that
 	// match objects that we're tracking.
-	var filteredMustHaves []string
+	var filteredMustHaves []unique.Handle[string]
 	var idSets []set.Set[ItemID]
 	for _, v := range r.MustHaveOneOfValues {
 		if idsSet := idx.labelNameToValueToIDs[labelName].m[v]; idsSet != nil {
@@ -151,7 +152,7 @@ func (idx *LabelNameValueIndex[ItemID, Item]) StrategyFor(labelName string, r pa
 		// We filtered all values out!  That means that the selector cannot
 		// match anything.  If it could match something, we'd have found it
 		// in the index.
-		logrus.Debugf("No %s with %s=%v", idx.nameOfTrackedItems, labelName, r.MustHaveOneOfValues)
+		logrus.Debugf("No %s with %s=%v", idx.nameOfTrackedItems, labelName.Value(), r.MustHaveOneOfValues)
 		return NoMatchStrategy[ItemID]{}
 	}
 
@@ -234,13 +235,13 @@ func (n NoMatchStrategy[ItemID]) Name() string {
 // a specific value for a certain label.  It is the narrowest, most optimized
 // strategy.
 type LabelNameSingleValueStrategy[ItemID comparable] struct {
-	label string
-	value string
+	label unique.Handle[string]
+	value unique.Handle[string]
 	idSet set.Set[ItemID]
 }
 
 func (s LabelNameSingleValueStrategy[ItemID]) String() string {
-	return fmt.Sprintf("scan single label %s=%v", s.label, s.value)
+	return fmt.Sprintf("scan single label %s=%v", s.label.Value(), s.value)
 }
 
 func (s LabelNameSingleValueStrategy[ItemID]) EstimatedItemsToScan() int {
@@ -264,13 +265,13 @@ func (s LabelNameSingleValueStrategy[ItemID]) Name() string {
 // LabelNameMultiValueStrategy is a ScanStrategy that scans over items that have
 // specific, values for a certain label.
 type LabelNameMultiValueStrategy[ItemID comparable] struct {
-	label  string
-	values []string
+	label  unique.Handle[string]
+	values []unique.Handle[string]
 	idSets []set.Set[ItemID]
 }
 
 func (s LabelNameMultiValueStrategy[ItemID]) String() string {
-	return fmt.Sprintf("scan multi label %s=%v", s.label, s.values)
+	return fmt.Sprintf("scan multi label %s=%v", s.label.Value(), s.values)
 }
 
 func (s LabelNameMultiValueStrategy[ItemID]) EstimatedItemsToScan() int {
@@ -295,12 +296,12 @@ func (s LabelNameMultiValueStrategy[ItemID]) Name() string {
 // particular label, no matter the value of that label.  It is used for
 // selectors such as "has(labelName)".
 type LabelNameStrategy[ItemID comparable] struct {
-	label  string
+	label  unique.Handle[string]
 	values values[ItemID]
 }
 
 func (s LabelNameStrategy[ItemID]) String() string {
-	return fmt.Sprintf("scan all values of label %s", s.label)
+	return fmt.Sprintf("scan all values of label %s", s.label.Value())
 }
 
 func (s LabelNameStrategy[ItemID]) EstimatedItemsToScan() int {

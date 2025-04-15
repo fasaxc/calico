@@ -16,11 +16,11 @@ package labelindex
 
 import (
 	"iter"
-	"maps"
 	"math"
 	"reflect"
 	"strings"
 	"time"
+	"unique"
 
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 	"github.com/projectcalico/api/pkg/lib/numorstring"
@@ -81,6 +81,14 @@ type endpointData struct {
 	parents []*npParentData
 
 	cachedMatchingIPSetIDs set.Set[string] /* or, as an optimization, nil if there are none */
+}
+
+func (d *endpointData) GetHandle(labelName unique.Handle[string]) (handle unique.Handle[string], present bool) {
+	return d.labels.GetHandle(labelName)
+}
+
+func (d *endpointData) OwnLabelHandles() iter.Seq2[unique.Handle[string], unique.Handle[string]] {
+	return d.labels.AllHandles()
 }
 
 func (d *endpointData) AddMatchingIPSetID(id string) {
@@ -190,7 +198,7 @@ func (d *endpointData) Get(labelName string) (value string, present bool) {
 		return
 	}
 	for _, parent := range d.parents {
-		if value, present = parent.labels[labelName]; present {
+		if value, present = parent.labels.GetString(labelName); present {
 			return
 		}
 	}
@@ -209,7 +217,7 @@ func (d *endpointData) IterOwnAndParentLabels(f func(k, v string)) {
 	}
 
 	for _, parent := range d.parents {
-		for k, v := range parent.labels {
+		for k, v := range parent.labels.AllStrings() {
 			if seenKeys.Contains(k) {
 				// label is shadowed.
 				continue
@@ -220,6 +228,34 @@ func (d *endpointData) IterOwnAndParentLabels(f func(k, v string)) {
 		}
 	}
 	seenKeys.Clear()
+}
+
+func (d *endpointData) AllOwnAndParentLabelHandles() iter.Seq2[unique.Handle[string], unique.Handle[string]] {
+	return func(yield func(k, v unique.Handle[string]) bool) {
+		seenKeys := set.New[unique.Handle[string]]()
+		defer seenKeys.Clear()
+
+		for k, v := range d.labels.AllHandles() {
+			if !yield(k, v) {
+				return
+			}
+			seenKeys.Add(k)
+		}
+
+		for _, parent := range d.parents {
+			for k, v := range parent.labels.AllHandles() {
+				if seenKeys.Contains(k) {
+					// label is shadowed.
+					continue
+				}
+				// Non-shadowed parent label. Emit.
+				if !yield(k, v) {
+					return
+				}
+				seenKeys.Add(k)
+			}
+		}
+	}
 }
 
 func (d *endpointData) Equals(other *endpointData) bool {
@@ -260,12 +296,16 @@ func (d *endpointData) Equals(other *endpointData) bool {
 // if we have partial information.
 type npParentData struct {
 	id          string
-	labels      map[string]string
+	labels      internedlabels.InternedLabels
 	endpointIDs set.Set[any]
 }
 
+func (d *npParentData) OwnLabelHandles() iter.Seq2[unique.Handle[string], unique.Handle[string]] {
+	return d.labels.AllHandles()
+}
+
 func (d *npParentData) OwnLabels() iter.Seq2[string, string] {
-	return maps.All(d.labels)
+	return d.labels.AllStrings()
 }
 
 func (d *npParentData) DiscardEndpointID(id any) {
@@ -817,7 +857,7 @@ func (idx *SelectorAndNamedPortIndex) UpdateParentLabels(parentID string, labels
 		parentData,
 		// Function to apply the update.
 		func() {
-			parentData.labels = labels
+			parentData.labels = internedlabels.Make(labels) // FIXME
 		},
 		// Function to back out the update.
 		func() {
@@ -916,7 +956,7 @@ func (idx *SelectorAndNamedPortIndex) discardParentIfEmpty(id string) {
 	if !ok {
 		return
 	}
-	if parent.endpointIDs == nil && parent.labels == nil {
+	if parent.endpointIDs == nil && parent.labels.IsNil() {
 		idx.parentKVIdx.Remove(id)
 	}
 }

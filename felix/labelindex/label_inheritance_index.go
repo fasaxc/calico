@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The labelindex package provides the InheritIndex type, which emits events as the set of
+// Package labelindex provides the InheritIndex type, which emits events as the set of
 // items (currently WorkloadEndpoints/HostEndpoint) it has been told about start (or stop) matching
 // the label selectors (which are extracted from the active policy rules) it has been told about.
 //
@@ -45,6 +45,7 @@ package labelindex
 
 import (
 	"reflect"
+	"unique"
 
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 	log "github.com/sirupsen/logrus"
@@ -65,6 +66,10 @@ import (
 type itemData struct {
 	labels  internedlabels.InternedLabels
 	parents []*parentData
+}
+
+func (itemData *itemData) GetHandle(labelName unique.Handle[string]) (handle unique.Handle[string], present bool) {
+	return itemData.labels.GetHandle(labelName)
 }
 
 // Get implements the Labels interface for itemData.  Combines the item's own labels with those
@@ -171,6 +176,7 @@ func (l *InheritIndex) OnUpdate(update api.Update) (_ bool) {
 func (idx *InheritIndex) UpdateSelector(id interface{}, sel selector.Selector) {
 	if sel == nil {
 		log.WithField("id", id).Panic("Selector should not be nil")
+		panic("Selector should not be nil")
 	}
 	oldSel := idx.selectorsById[id]
 	// Since the selectorRoot struct has cache fields, the easiest way to compare two
