@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package labels
+package internedlabels
 
 import (
 	"maps"
@@ -23,11 +23,11 @@ func TestInternCache(t *testing.T) {
 	m1 := map[string]string{
 		"key1": "value1",
 	}
-	in := MakeInterned(m1)
+	in := Make(m1)
 	m2 := map[string]string{
 		"key1": "value1",
 	}
-	in2 := MakeInterned(m2)
+	in2 := Make(m2)
 
 	if in.m != in2.m {
 		t.Errorf("Expected the same interned map, got different ones")
@@ -40,7 +40,7 @@ func TestInternCache(t *testing.T) {
 	m3 := map[string]string{
 		"key1": "value2",
 	}
-	in3 := MakeInterned(m3)
+	in3 := Make(m3)
 
 	if in.m == in3.m {
 		t.Errorf("Expected different interned maps, got the same one")

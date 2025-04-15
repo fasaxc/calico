@@ -17,6 +17,7 @@ package updateprocessors
 import (
 	"errors"
 	"fmt"
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"net"
 	"strings"
 
@@ -172,7 +173,7 @@ func convertWorkloadEndpointV2ToV1Value(val interface{}) (interface{}, error) {
 		IPv6Nets:                   ipv6Nets,
 		IPv4NAT:                    ipv4NAT,
 		IPv6NAT:                    ipv6NAT,
-		Labels:                     labels,
+		Labels:                     internedlabels.Make(labels),
 		IPv4Gateway:                ipv4Gateway,
 		IPv6Gateway:                ipv6Gateway,
 		Ports:                      ports,

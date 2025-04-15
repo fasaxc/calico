@@ -44,6 +44,7 @@
 package labelindex
 
 import (
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"reflect"
 
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
@@ -199,7 +200,7 @@ func (idx *InheritIndex) DeleteSelector(id interface{}) {
 	delete(idx.selectorsById, id)
 }
 
-func (idx *InheritIndex) UpdateLabels(id interface{}, labels map[string]string, parentIDs []string) {
+func (idx *InheritIndex) UpdateLabels(id interface{}, labels internedlabels.InternedLabels, parentIDs []string) {
 	log.Debug("Inherit index updating labels for ", id)
 	log.Debug("Num dirty items ", idx.dirtyItemIDs.Len(), " items")
 

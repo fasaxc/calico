@@ -16,6 +16,7 @@ package converters
 
 import (
 	"fmt"
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -79,7 +80,7 @@ func (_ WorkloadEndpoint) APIV1ToBackendV1(rIn unversioned.Resource) (*model.KVP
 	d := model.KVPair{
 		Key: k,
 		Value: &model.WorkloadEndpoint{
-			Labels:                     ah.Metadata.Labels,
+			Labels:                     internedlabels.Make(ah.Metadata.Labels),
 			ActiveInstanceID:           ah.Metadata.ActiveInstanceID,
 			State:                      "active",
 			Name:                       ah.Spec.InterfaceName,
@@ -113,7 +114,7 @@ func (_ WorkloadEndpoint) BackendV1ToAPIV3(kvp *model.KVPair) (Resource, error) 
 		return nil, fmt.Errorf("value is not a valid WorkloadEndpoint resource Value")
 	}
 
-	labels := convertLabels(wepValue.Labels)
+	labels := convertLabels(wepValue.Labels.RecomputeOriginalMap())
 	namespace := "default"
 
 	var err error

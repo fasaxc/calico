@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package labels
+package internedlabels
 
 import (
 	"encoding/json"
@@ -57,13 +57,13 @@ var (
 	)
 )
 
-type Interned struct {
+type InternedLabels struct {
 	// m is a pointer to an interned map of string handles.  The intern cache
 	// relies on this being a pointer in order to keep its WeakPointer alive.
 	m *handleMap
 }
 
-func MakeInterned(m map[string]string) Interned {
+func Make(m map[string]string) InternedLabels {
 	var hm handleMap
 	if m != nil {
 		hm = make(handleMap, len(m))
@@ -74,14 +74,14 @@ func MakeInterned(m map[string]string) Interned {
 	cacheLock.Lock()
 	interned := cache.Intern(&hm)
 	cacheLock.Unlock()
-	return Interned{m: interned}
+	return InternedLabels{m: interned}
 }
 
 // MarshalJSON implements the json.Marshaler interface. Must be defined on the
-// value receiver so that Interned can be embedded in other structs.
+// value receiver so that InternedLabels can be embedded in other structs.
 //
 //goland:noinspection GoMixedReceiverTypes
-func (i Interned) MarshalJSON() ([]byte, error) {
+func (i InternedLabels) MarshalJSON() ([]byte, error) {
 	if i.m == nil {
 		return json.Marshal(nil)
 	}
@@ -91,7 +91,7 @@ func (i Interned) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON implements the json.Unmarshaler interface.
 //
 //goland:noinspection GoMixedReceiverTypes
-func (i *Interned) UnmarshalJSON(data []byte) error {
+func (i *InternedLabels) UnmarshalJSON(data []byte) error {
 	var temp handleMap
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
@@ -102,8 +102,19 @@ func (i *Interned) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (i *InternedLabels) AllHandles() iter.Seq2[unique.Handle[string], unique.Handle[string]] {
+	return func(yield func(unique.Handle[string], unique.Handle[string]) bool) {
+		if i.m == nil {
+			return
+		}
+		for k, v := range *i.m {
+			yield(unique.Handle[string](k), unique.Handle[string](v))
+		}
+	}
+}
+
 //goland:noinspection GoMixedReceiverTypes
-func (i *Interned) AllStrings() iter.Seq2[string, string] {
+func (i *InternedLabels) AllStrings() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		if i.m == nil {
 			return
@@ -115,7 +126,7 @@ func (i *Interned) AllStrings() iter.Seq2[string, string] {
 }
 
 //goland:noinspection GoMixedReceiverTypes
-func (i *Interned) RecomputeOriginalMap() map[string]string {
+func (i *InternedLabels) RecomputeOriginalMap() map[string]string {
 	if i.m == nil {
 		return nil
 	}
@@ -127,7 +138,7 @@ func (i *Interned) RecomputeOriginalMap() map[string]string {
 }
 
 //goland:noinspection GoMixedReceiverTypes
-func (i *Interned) GetString(k string) (string, bool) {
+func (i *InternedLabels) GetString(k string) (string, bool) {
 	if i.m == nil {
 		return "", false
 	}
@@ -136,4 +147,16 @@ func (i *Interned) GetString(k string) (string, bool) {
 		return "", false
 	}
 	return v.Value(), true
+}
+
+//goland:noinspection GoMixedReceiverTypes
+func (i *InternedLabels) GetHandle(h unique.Handle[string]) (unique.Handle[string], bool) {
+	if i.m == nil {
+		return unique.Handle[string]{}, false
+	}
+	v, ok := (*i.m)[stringHandle(h)]
+	if !ok {
+		return unique.Handle[string]{}, false
+	}
+	return unique.Handle[string](v), true
 }
