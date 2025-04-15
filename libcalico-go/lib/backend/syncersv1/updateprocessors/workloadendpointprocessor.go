@@ -17,13 +17,13 @@ package updateprocessors
 import (
 	"errors"
 	"fmt"
-	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"net"
 	"strings"
 
 	apiv3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	libapiv3 "github.com/projectcalico/calico/libcalico-go/lib/apis/v3"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/k8s/conversion"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"

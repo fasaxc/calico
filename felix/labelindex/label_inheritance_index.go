@@ -44,12 +44,12 @@
 package labelindex
 
 import (
-	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"reflect"
 
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/calico/libcalico-go/lib/selector"
@@ -63,14 +63,14 @@ import (
 // In particular, it holds it current explicitly-assigned labels and a pointer to the parent data
 // for each of its parents.
 type itemData struct {
-	labels  map[string]string
+	labels  internedlabels.InternedLabels
 	parents []*parentData
 }
 
 // Get implements the Labels interface for itemData.  Combines the item's own labels with those
 // of its parents on the fly.
 func (itemData *itemData) Get(labelName string) (value string, present bool) {
-	if value, present = itemData.labels[labelName]; present {
+	if value, present = itemData.labels.GetString(labelName); present {
 		return
 	}
 	for _, parent := range itemData.parents {
@@ -216,7 +216,7 @@ func (idx *InheritIndex) UpdateLabels(id interface{}, labels internedlabels.Inte
 		}
 	}
 	newItemData := &itemData{}
-	if len(labels) > 0 {
+	if labels.Len() > 0 {
 		newItemData.labels = labels
 	}
 	if len(parentIDs) > 0 {

@@ -15,6 +15,8 @@
 package labelindex
 
 import (
+	"iter"
+	"maps"
 	"math"
 	"reflect"
 	"strings"
@@ -29,6 +31,7 @@ import (
 	"github.com/projectcalico/calico/felix/ip"
 	"github.com/projectcalico/calico/felix/labelindex/labelnamevalueindex"
 	"github.com/projectcalico/calico/felix/labelindex/labelrestrictionindex"
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/calico/libcalico-go/lib/selector"
@@ -72,7 +75,7 @@ func init() {
 
 // endpointData holds the data that we need to know about a particular endpoint.
 type endpointData struct {
-	labels  map[string]string
+	labels  internedlabels.InternedLabels
 	nets    []ip.CIDR
 	ports   []model.EndpointPort
 	parents []*npParentData
@@ -183,7 +186,7 @@ type ipSetData struct {
 // those of its parents on the fly.  This reduces the number of allocations we need to do, and
 // it's fast in the mainline case (where there are 0-1 parents).
 func (d *endpointData) Get(labelName string) (value string, present bool) {
-	if value, present = d.labels[labelName]; present {
+	if value, present = d.labels.GetString(labelName); present {
 		return
 	}
 	for _, parent := range d.parents {
@@ -194,13 +197,13 @@ func (d *endpointData) Get(labelName string) (value string, present bool) {
 	return
 }
 
-func (d *endpointData) OwnLabels() map[string]string {
-	return d.labels
+func (d *endpointData) OwnLabels() iter.Seq2[string, string] {
+	return d.labels.AllStrings()
 }
 
 func (d *endpointData) IterOwnAndParentLabels(f func(k, v string)) {
 	seenKeys := set.New[string]()
-	for k, v := range d.labels {
+	for k, v := range d.labels.AllStrings() {
 		f(k, v)
 		seenKeys.Add(k)
 	}
@@ -220,7 +223,7 @@ func (d *endpointData) IterOwnAndParentLabels(f func(k, v string)) {
 }
 
 func (d *endpointData) Equals(other *endpointData) bool {
-	if len(d.labels) != len(other.labels) {
+	if d.labels != other.labels {
 		return false
 	}
 	if len(d.ports) != len(other.ports) {
@@ -233,12 +236,6 @@ func (d *endpointData) Equals(other *endpointData) bool {
 		return false
 	}
 
-	for k, v := range d.labels {
-		otherLabel, exists := other.labels[k]
-		if !exists || otherLabel != v {
-			return false
-		}
-	}
 	for i, p := range d.ports {
 		if other.ports[i] != p {
 			return false
@@ -267,8 +264,8 @@ type npParentData struct {
 	endpointIDs set.Set[any]
 }
 
-func (d *npParentData) OwnLabels() map[string]string {
-	return d.labels
+func (d *npParentData) OwnLabels() iter.Seq2[string, string] {
+	return maps.All(d.labels)
 }
 
 func (d *npParentData) DiscardEndpointID(id any) {
@@ -491,6 +488,7 @@ func (idx *SelectorAndNamedPortIndex) UpdateIPSet(ipSetID string, sel selector.S
 	}
 	if sel == nil {
 		log.WithField("id", ipSetID).Panic("Selector should not be nil")
+		panic("Selector should not be nil") // Keep linter happy.
 	}
 
 	// Check whether anything has actually changed before we do a scan.
@@ -586,7 +584,7 @@ func (idx *SelectorAndNamedPortIndex) DeleteIPSet(setID string) {
 
 func (idx *SelectorAndNamedPortIndex) UpdateEndpointOrSet(
 	id any,
-	labels map[string]string,
+	labels internedlabels.InternedLabels,
 	nets []ip.CIDR,
 	ports []model.EndpointPort,
 	parentIDs []string,
@@ -603,7 +601,7 @@ func (idx *SelectorAndNamedPortIndex) UpdateEndpointOrSet(
 
 	// Calculate the new endpoint data.
 	newEndpointData := &endpointData{}
-	if len(labels) > 0 {
+	if labels.Len() > 0 {
 		newEndpointData.labels = labels
 	}
 	if len(parentIDs) > 0 {

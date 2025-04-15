@@ -16,6 +16,7 @@ package labelnamevalueindex
 
 import (
 	"fmt"
+	"iter"
 
 	"github.com/sirupsen/logrus"
 
@@ -41,7 +42,7 @@ type LabelNameValueIndex[ItemID comparable, Item Labeled] struct {
 }
 
 type Labeled interface {
-	OwnLabels() map[string]string
+	OwnLabels() iter.Seq2[string, string]
 }
 
 func New[ItemID comparable, Item Labeled](nameOfTrackedItems string) *LabelNameValueIndex[ItemID, Item] {

@@ -16,11 +16,12 @@ package internedlabels
 
 import (
 	"encoding/json"
-	"github.com/projectcalico/calico/lib/std/interncache"
 	"iter"
 	"maps"
 	"sync"
 	"unique"
+
+	"github.com/projectcalico/calico/lib/std/interncache"
 )
 
 type stringHandle unique.Handle[string]
@@ -65,12 +66,14 @@ type InternedLabels struct {
 
 func Make(m map[string]string) InternedLabels {
 	var hm handleMap
-	if m != nil {
-		hm = make(handleMap, len(m))
-		for k, v := range m {
-			hm[stringHandle(unique.Make(k))] = stringHandle(unique.Make(v))
-		}
+	if m == nil {
+		return InternedLabels{}
 	}
+	hm = make(handleMap, len(m))
+	for k, v := range m {
+		hm[stringHandle(unique.Make(k))] = stringHandle(unique.Make(v))
+	}
+
 	cacheLock.Lock()
 	interned := cache.Intern(&hm)
 	cacheLock.Unlock()
@@ -126,7 +129,7 @@ func (i *InternedLabels) AllStrings() iter.Seq2[string, string] {
 }
 
 //goland:noinspection GoMixedReceiverTypes
-func (i *InternedLabels) RecomputeOriginalMap() map[string]string {
+func (i InternedLabels) RecomputeOriginalMap() map[string]string {
 	if i.m == nil {
 		return nil
 	}
@@ -159,4 +162,12 @@ func (i *InternedLabels) GetHandle(h unique.Handle[string]) (unique.Handle[strin
 		return unique.Handle[string]{}, false
 	}
 	return unique.Handle[string](v), true
+}
+
+//goland:noinspection GoMixedReceiverTypes
+func (i *InternedLabels) Len() int {
+	if i.m == nil {
+		return 0
+	}
+	return len(*i.m)
 }

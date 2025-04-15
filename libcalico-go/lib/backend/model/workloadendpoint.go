@@ -16,12 +16,12 @@ package model
 
 import (
 	"fmt"
-	"github.com/projectcalico/calico/lib/std/internedlabels"
 	"reflect"
 	"regexp"
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	v3 "github.com/projectcalico/calico/libcalico-go/lib/apis/v3"
 	"github.com/projectcalico/calico/libcalico-go/lib/errors"
 	"github.com/projectcalico/calico/libcalico-go/lib/net"
