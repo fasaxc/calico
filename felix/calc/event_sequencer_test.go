@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 	googleproto "google.golang.org/protobuf/proto"
 
 	"github.com/projectcalico/calico/felix/calc"
@@ -210,9 +211,9 @@ var _ = DescribeTable("ModelHostEndpointToProto",
 			Name:              "eth0",
 			ExpectedIPv4Addrs: []net.IP{mustParseIP("10.28.0.13"), mustParseIP("10.28.0.14")},
 			ExpectedIPv6Addrs: []net.IP{mustParseIP("dead::beef"), mustParseIP("dead::bee5")},
-			Labels: map[string]string{
+			Labels: internedlabels.Make(map[string]string{
 				"a": "b",
-			},
+			}),
 			ProfileIDs: []string{"prof1"},
 		},
 		[]*proto.TierInfo{{Name: "a", IngressPolicies: []string{"b", "c"}}},
@@ -233,9 +234,9 @@ var _ = DescribeTable("ModelHostEndpointToProto",
 			Name:              "eth0",
 			ExpectedIPv4Addrs: []net.IP{mustParseIP("10.28.0.13"), mustParseIP("10.28.0.14")},
 			ExpectedIPv6Addrs: []net.IP{mustParseIP("dead::beef"), mustParseIP("dead::bee5")},
-			Labels: map[string]string{
+			Labels: internedlabels.Make(map[string]string{
 				"a": "b",
-			},
+			}),
 			ProfileIDs: []string{"prof1"},
 		},
 		[]*proto.TierInfo{{Name: "a", IngressPolicies: []string{"b"}}},

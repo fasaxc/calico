@@ -19,6 +19,7 @@ package calc_test
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/projectcalico/calico/lib/std/internedlabels"
 
 	"github.com/projectcalico/calico/felix/calc"
 	"github.com/projectcalico/calico/felix/config"
@@ -56,7 +57,7 @@ var _ = Describe("WorkloadEndpoint Source IP Spoofing validation", func() {
 					State:                      "active",
 					Name:                       "cali1234",
 					AllowSpoofedSourcePrefixes: []net.IPNet{mustParseNet("1.2.3.4/32")},
-					Labels:                     map[string]string{"label": "value"},
+					Labels:                     internedlabels.Make(map[string]string{"label": "value"}),
 					Mac:                        mustParseMac("01:02:03:04:05:06"),
 					ProfileIDs:                 []string{},
 					IPv4Nets:                   []net.IPNet{mustParseNet("10.0.0.1/32")},
