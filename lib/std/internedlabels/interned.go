@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"iter"
 	"maps"
-	"sync"
 	"unique"
 
 	"github.com/projectcalico/calico/lib/std/interncache"
@@ -49,8 +48,7 @@ func (s stringHandle) Value() string {
 type handleMap = map[stringHandle]stringHandle
 
 var (
-	cacheLock sync.Mutex
-	cache     = interncache.New[handleMap](
+	cache = interncache.New[handleMap](
 		interncache.MapHasher[stringHandle, stringHandle](),
 		func(m *handleMap, m2 *handleMap) bool {
 			return maps.Equal(*m, *m2)
@@ -74,9 +72,7 @@ func Make(m map[string]string) InternedLabels {
 		hm[stringHandle(unique.Make(k))] = stringHandle(unique.Make(v))
 	}
 
-	cacheLock.Lock()
 	interned := cache.Intern(&hm)
-	cacheLock.Unlock()
 	return InternedLabels{m: interned}
 }
 
@@ -99,9 +95,7 @@ func (i *InternedLabels) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}
-	cacheLock.Lock()
 	i.m = cache.Intern(&temp)
-	cacheLock.Unlock()
 	return nil
 }
 
@@ -111,7 +105,9 @@ func (i *InternedLabels) AllHandles() iter.Seq2[unique.Handle[string], unique.Ha
 			return
 		}
 		for k, v := range *i.m {
-			yield(unique.Handle[string](k), unique.Handle[string](v))
+			if !yield(unique.Handle[string](k), unique.Handle[string](v)) {
+				return
+			}
 		}
 	}
 }
@@ -123,7 +119,9 @@ func (i *InternedLabels) AllStrings() iter.Seq2[string, string] {
 			return
 		}
 		for k, v := range *i.m {
-			yield(k.Value(), v.Value())
+			if !yield(k.Value(), v.Value()) {
+				return
+			}
 		}
 	}
 }
