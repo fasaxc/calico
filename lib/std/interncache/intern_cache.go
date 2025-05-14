@@ -149,7 +149,7 @@ func (c *Cache[T]) hash(v *T) uint64 {
 
 func (c *Cache[T]) onPointerCleanedUp(h uint64) {
 	for {
-		cleanupsPending := c.cleanupsPending.Load()
+		cleanupsPending := c.cleanupsPending.Add(1)
 		currentLen := c.len.Load()
 		if cleanupsPending > currentLen*10/100 {
 			if c.cleanupsPending.CompareAndSwap(cleanupsPending, 0) {
