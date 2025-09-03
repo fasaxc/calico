@@ -509,65 +509,126 @@ func (s *SyncerClient) loop(cxt context.Context, cancelFn context.CancelFunc, co
 	}
 
 	// Handshake done, start processing messages from the server.
-	for cxt.Err() == nil {
-		msg, err := s.readMessageFromServer(cxt, logCxt)
-		if err != nil {
+
+	// Start a background goroutine to actually do the reads from the server
+	// This decouples the main loop from calling s.readMessageFromServer, so
+	// that we can also process other events.
+	//
+	// Thread safety: we use an unbuffered channel to trigger reads, so that
+	// reads are blocked while s.handleMessageFromServer() is called.  This is
+	// required because s.handleMessageFromServer() may call s.restartDecoder(),
+	// which needs to do a blocking read of its own.
+	readCtx, cancelReadCtx := context.WithCancel(cxt)
+	triggerRead := make(chan struct{})
+	msgsFromServer := make(chan any)
+	defer cancelReadCtx()
+	connFinished.Add(1)
+	go s.readMessagesFromServer(readCtx, logCxt, triggerRead, msgsFromServer, connFinished)
+
+	for {
+		select {
+		case <-cxt.Done():
+			logCxt.Info("Context asked us to stop, exiting main loop.")
 			return
-		}
-		debug := log.IsLevelEnabled(log.DebugLevel)
-		switch msg := msg.(type) {
-		case syncproto.MsgSyncStatus:
-			logCxt.WithField("newStatus", msg.SyncStatus).Info("Status update from Typha.")
-			s.callbacks.OnStatusUpdated(msg.SyncStatus)
-		case syncproto.MsgPing:
-			logCxt.Debug("Ping received from Typha")
-			err := s.sendMessageToServer(cxt, logCxt, "write pong to server",
-				syncproto.MsgPong{
-					PingTimestamp: msg.Timestamp,
-				},
-			)
-			if err != nil {
-				return // (Failure already logged.)
-			}
-			logCxt.Debug("Pong sent to Typha")
-		case syncproto.MsgKVs:
-			updates := make([]api.Update, 0, len(msg.KVs))
-			keys := make([]string, 0, len(msg.KVs))
-			if s.options.DebugDiscardKVUpdates {
-				// For simulating lots of clients in tests, just throw away the data.
-				continue
-			}
-			for _, kv := range msg.KVs {
-				update, err := kv.ToUpdate()
-				if err != nil {
-					logCxt.WithError(err).Error("Failed to deserialize update, skipping.")
-					continue
-				}
-				if debug {
-					logCxt.WithFields(log.Fields{
-						"serialized":   kv,
-						"deserialized": update,
-					}).Debug("Decoded update from Typha")
-				}
-				updates = append(updates, update)
-				keys = append(keys, kv.Key)
-			}
-			s.callbacks.OnUpdatesKeysKnown(updates, keys)
-		case syncproto.MsgDecoderRestart:
-			if s.options.DisableDecoderRestart {
-				log.Error("Server sent MsgDecoderRestart but we signalled no support.")
+		case triggerRead <- struct{}{}:
+		case msg, ok := <-msgsFromServer:
+			if !ok {
+				logCxt.Info("Channel from server closed, exiting main loop.")
 				return
 			}
-			err = s.restartDecoder(cxt, logCxt, msg)
-			if err != nil {
-				log.WithError(err).Error("Failed to restart decoder")
+			if err := s.handleMessageFromServer(cxt, logCxt, msg); err != nil {
+				logCxt.WithError(err).Error("Failed to handle message from server, exiting main loop.")
 				return
 			}
-		case syncproto.MsgServerHello:
-			logCxt.WithField("serverVersion", msg.Version).Error("Unexpected extra server hello message received")
-			return
 		}
 	}
+}
+
+// readMessagesFromServer loops, waiting for triggers on the triggerRead
+// channel.  For each trigger, it does one read and sends the result on the
+// msgsFromServer channel.  Closes messagesFromServer when exiting.
+func (s *SyncerClient) readMessagesFromServer(cxt context.Context, logCxt *log.Entry, triggerRead <-chan struct{}, msgsFromServer chan<- any, finished *sync.WaitGroup) {
+	defer finished.Done()
+	defer close(msgsFromServer)
+	for {
+		select {
+		case <-cxt.Done():
+			return
+		case _, ok := <-triggerRead:
+			if !ok {
+				return
+			}
+		}
+
+		msg, err := s.readMessageFromServer(cxt, logCxt)
+		if err != nil {
+			logCxt.WithError(err).Error("Failed to read message from server")
+			return
+		}
+		if log.IsLevelEnabled(log.DebugLevel) {
+			logCxt.WithField("msg", msg).Debug("Received message from server")
+		}
+
+		select {
+		case <-cxt.Done():
+			return
+		case msgsFromServer <- msg:
+		}
+	}
+}
+
+func (s *SyncerClient) handleMessageFromServer(ctx context.Context, logCxt *log.Entry, msg any) error {
+	debug := log.IsLevelEnabled(log.DebugLevel)
+	switch msg := msg.(type) {
+	case syncproto.MsgSyncStatus:
+		logCxt.WithField("newStatus", msg.SyncStatus).Info("Status update from Typha.")
+		s.callbacks.OnStatusUpdated(msg.SyncStatus)
+	case syncproto.MsgPing:
+		logCxt.Debug("Ping received from Typha")
+		err := s.sendMessageToServer(ctx, logCxt, "write pong to server",
+			syncproto.MsgPong{
+				PingTimestamp: msg.Timestamp,
+			},
+		)
+		if err != nil {
+			return err // (Failure already logged.)
+		}
+		logCxt.Debug("Pong sent to Typha")
+	case syncproto.MsgKVs:
+		updates := make([]api.Update, 0, len(msg.KVs))
+		keys := make([]string, 0, len(msg.KVs))
+		if s.options.DebugDiscardKVUpdates {
+			// For simulating lots of clients in tests, just throw away the data.
+			return nil
+		}
+		for _, kv := range msg.KVs {
+			update, err := kv.ToUpdate()
+			if err != nil {
+				logCxt.WithError(err).Error("Failed to deserialize update, skipping (Typha/Client version mismatch?).")
+				continue
+			}
+			if debug {
+				logCxt.WithFields(log.Fields{
+					"serialized":   kv,
+					"deserialized": update,
+				}).Debug("Decoded update from Typha")
+			}
+			updates = append(updates, update)
+			keys = append(keys, kv.Key)
+		}
+		s.callbacks.OnUpdatesKeysKnown(updates, keys)
+	case syncproto.MsgDecoderRestart:
+		if s.options.DisableDecoderRestart {
+			return fmt.Errorf("server sent MsgDecoderRestart but we signalled no support")
+		}
+		err := s.restartDecoder(ctx, logCxt, msg)
+		if err != nil {
+			return fmt.Errorf("failed to restart decoder: %w", err)
+		}
+	case syncproto.MsgServerHello:
+		return fmt.Errorf("unexpected extra server hello message received")
+	}
+	return nil
 }
 
 func (s *SyncerClient) restartDecoder(cxt context.Context, logCxt *log.Entry, msg syncproto.MsgDecoderRestart) error {
