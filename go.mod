@@ -370,6 +370,8 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
+require go.etcd.io/bbolt v1.4.2
+
 replace (
 	github.com/projectcalico/api => ./api
 	github.com/projectcalico/calico/lib/httpmachinery => ./lib/httpmachinery
