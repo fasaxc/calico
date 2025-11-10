@@ -15,6 +15,7 @@
 package calc
 
 import (
+	"os"
 	"reflect"
 
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
@@ -64,7 +65,7 @@ type ActiveRulesCalculator struct {
 	// We need to cache all the policies, and the policy Rule struct is very
 	// sparse (which makes it very wasteful). The packed map stores the policies
 	// in compressed format to save a lot of RAM.
-	allPolicies packedmap.Map[model.PolicyKey, *model.Policy]
+	allPolicies *packedmap.DiskBacked[model.PolicyKey, *model.Policy]
 	// Similarly, profiles are sparse and wasteful, we use a deduped packed map
 	// because they're also often identical.
 	allProfileRules packedmap.Deduped[string, *model.ProfileRules]
@@ -97,9 +98,14 @@ type ActiveRulesCalculator struct {
 }
 
 func NewActiveRulesCalculator() *ActiveRulesCalculator {
+	tempDir := os.TempDir()
+	json, err := packedmap.NewDiskBackedCompressedJSON[model.PolicyKey, *model.Policy](tempDir + "/felix-arc-policies.db")
+	if err != nil {
+		log.WithError(err).Panic("Failed to create disk-backed packed map for policies.")
+	}
 	arc := &ActiveRulesCalculator{
 		// Caches of all known policies/profiles and tiers.
-		allPolicies:     packedmap.MakeCompressedJSON[model.PolicyKey, *model.Policy](),
+		allPolicies:     json,
 		allProfileRules: packedmap.MakeDedupedCompressedJSON[string, *model.ProfileRules](),
 		allTiers:        make(map[string]*model.Tier),
 
@@ -194,7 +200,10 @@ func (arc *ActiveRulesCalculator) OnUpdate(update api.Update) (_ bool) {
 		// Update the tier/policy/profile counts.
 		arc.updateStats()
 	case model.PolicyKey:
-		oldPolicy, _ := arc.allPolicies.Get(key)
+		oldPolicy, _, err := arc.allPolicies.Get(key)
+		if err != nil {
+			log.WithError(err).Panic("Failed to get existing policy")
+		}
 		oldPolicyWasForceProgrammed := policyForceProgrammed(oldPolicy)
 		if update.Value != nil {
 			log.Debugf("Updating ARC for policy %v", key)
@@ -299,7 +308,11 @@ func (arc *ActiveRulesCalculator) updateStats() {
 	if arc.OnPolicyCountsChanged == nil {
 		return
 	}
-	arc.OnPolicyCountsChanged(len(arc.allTiers), arc.allPolicies.Len(), arc.allProfileRules.Len(), arc.allALPPolicies.Len())
+	numPols, err := arc.allPolicies.Len()
+	if err != nil {
+		log.WithError(err).Panic("Failed to get policy count")
+	}
+	arc.OnPolicyCountsChanged(len(arc.allTiers), numPols, arc.allProfileRules.Len(), arc.allALPPolicies.Len())
 }
 
 func (arc *ActiveRulesCalculator) OnStatusUpdate(status api.SyncStatus) {
@@ -358,7 +371,10 @@ func (arc *ActiveRulesCalculator) onMatchStarted(selID, labelId interface{}) {
 		// must be in allPolicies because we can only match on a policy
 		// that we've seen.
 		log.Debugf("Policy %v now active", polKey)
-		policy, known := arc.allPolicies.Get(polKey)
+		policy, known, err := arc.allPolicies.Get(polKey)
+		if err != nil {
+			log.WithError(err).Panic("Failed to get policy from allPolicies.")
+		}
 		if !known {
 			log.WithField("policy", polKey).Panic("Policy active but missing from allPolicies.")
 		}
@@ -378,7 +394,10 @@ func (arc *ActiveRulesCalculator) onMatchStopped(selID, labelId interface{}) {
 		// Policy no longer active.
 		polKey := selID.(model.PolicyKey)
 		log.Debugf("Policy %v no longer active", polKey)
-		policy, _ := arc.allPolicies.Get(polKey)
+		policy, _, err := arc.allPolicies.Get(polKey)
+		if err != nil {
+			log.WithError(err).Panic("Failed to get policy from allPolicies.")
+		}
 		arc.sendPolicyUpdate(polKey, policy)
 	}
 	if labelId, ok := labelId.(model.EndpointKey); ok {
