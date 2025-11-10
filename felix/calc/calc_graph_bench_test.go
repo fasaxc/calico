@@ -191,7 +191,7 @@ func makeNetSetAndPolUpdates(num int) []api.Update {
 		})
 		updates = append(updates, api.Update{
 			KVPair: model.KVPair{
-				Key:   model.PolicyKey{Name: fmt.Sprintf("network-set-pol-%d", i)},
+				Key:   model.PolicyKey{Tier: "default", Name: fmt.Sprintf("network-set-pol-%d", i)},
 				Value: pol,
 			},
 		})
@@ -270,7 +270,7 @@ func makeTagPolicies(num int) []api.Update {
 
 		updates = append(updates, api.Update{
 			KVPair: model.KVPair{
-				Key:   model.PolicyKey{Name: fmt.Sprintf("tag-pol-%d", nextTagPolID)},
+				Key:   model.PolicyKey{Tier: "default", Name: fmt.Sprintf("tag-pol-%d", nextTagPolID)},
 				Value: pol,
 			},
 		})
