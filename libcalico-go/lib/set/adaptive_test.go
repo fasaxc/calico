@@ -15,10 +15,14 @@
 package set_test
 
 import (
+	"fmt"
 	"sort"
+	"sync"
 	"testing"
+	"unsafe"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/projectcalico/calico/libcalico-go/lib/set"
 )
@@ -122,7 +126,88 @@ var _ = Describe("Adaptive set", func() {
 			}
 		})
 	})
+
+	It("should be two words in size", func() {
+		Expect(unsafe.Sizeof(set.Adaptive[int]{})).To(Equal(2 * unsafe.Sizeof(uintptr(0))))
+	})
+
+	// Sizes either side of each storage transition: empty, single item,
+	// array, full array, map.
+	for _, n := range []int{0, 1, 2, 3, 4, 5, 16, 17, 18, 100} {
+		Describe(fmt.Sprintf("Snapshot of a set with %d items", n), func() {
+			var s, snap *set.Adaptive[int]
+
+			BeforeEach(func() {
+				s = adaptiveRange(0, n)
+				snap = s.Snapshot()
+			})
+
+			It("should be unaffected by mutating the original", func() {
+				addAndDiscard(s, n)
+				Expect(snap.Slice()).To(ConsistOf(rangeSlice(0, n)))
+			})
+
+			It("should not affect the original when mutated", func() {
+				addAndDiscard(snap, n)
+				Expect(s.Slice()).To(ConsistOf(rangeSlice(0, n)))
+			})
+
+			It("should be safe to read while the original is mutated", func() {
+				expected := set.FromArray(rangeSlice(0, n))
+				done := make(chan struct{})
+				var readerErr error
+				var wg sync.WaitGroup
+				wg.Go(func() {
+					for {
+						select {
+						case <-done:
+							return
+						default:
+						}
+						if !snap.Equals(expected) {
+							readerErr = fmt.Errorf("snapshot changed to %v", snap)
+							return
+						}
+					}
+				})
+
+				for i := range 100 {
+					s.Add(n + i)
+					s.Discard(i)
+					if i%10 == 0 {
+						// Re-share the storage so that the next write copies again.
+						_ = s.Snapshot()
+					}
+				}
+				close(done)
+				wg.Wait()
+
+				Expect(readerErr).NotTo(HaveOccurred())
+			})
+		})
+	}
 })
+
+func adaptiveRange(start, end int) *set.Adaptive[int] {
+	return set.AdaptiveFromArray(rangeSlice(start, end))
+}
+
+// addAndDiscard adds n..n+19 then discards the even numbers in 0..n+19,
+// exercising in-place writes as well as storage transitions.
+func addAndDiscard(s *set.Adaptive[int], n int) {
+	s.AddAll(rangeSlice(n, n+20))
+	for i := 0; i < n+20; i += 2 {
+		s.Discard(i)
+	}
+}
+
+func rangeSlice(start, end int) []int {
+	s := []int{}
+	for i := start; i < end; i++ {
+		s = append(s, i)
+	}
+	return s
+}
 
 func FuzzAdaptiveSet(f *testing.F) {
 	f.Add("a", "ab")
@@ -168,6 +253,9 @@ func FuzzAdaptiveSet(f *testing.F) {
 				}
 			}
 		}
+		snap := s1.Snapshot()
+		snapExpected := s2.Copy()
+
 		stopped := false
 		s1.Iter(func(item string) error {
 			if stopped {
@@ -190,6 +278,9 @@ func FuzzAdaptiveSet(f *testing.F) {
 			if s1.Contains(item) {
 				t.Fatal("Set still contained item")
 			}
+		}
+		if !snap.Equals(snapExpected) {
+			t.Fatal("Snapshot changed when original was mutated")
 		}
 	})
 }

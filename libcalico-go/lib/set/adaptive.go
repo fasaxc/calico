@@ -16,6 +16,7 @@ package set
 
 import (
 	"iter"
+	"maps"
 	"slices"
 	"unsafe"
 )
@@ -37,11 +38,17 @@ var arrCapForSize = [adaptiveSetArrayLimit + 1]int{
 //
 // The zero value of Adaptive is an empty set (so it may be embedded in other
 // datastructures).  When embedding, the object must not be copied and then
-// mutated.
+// mutated; use Snapshot to make a copy cheaply.
 type Adaptive[T comparable] struct {
 	// size is either the number of elements in the set, or sizeStoredInMap
-	// if the set is backed by a map.
-	size int
+	// if the set is backed by a map.  int8 so that size and shared fit in
+	// one word alongside p.
+	size int8
+
+	// shared is true if p's storage may be referenced by another Adaptive
+	// (via Snapshot).  The storage must then be copied before an in-place
+	// write.
+	shared bool
 
 	// p holds different types depending on size.
 	// if size == 0, p is nil.
@@ -73,7 +80,22 @@ func (a *Adaptive[T]) Len() int {
 	if a.size == sizeStoredInMap {
 		return len(*(*map[T]v)(a.p))
 	}
-	return a.size
+	return int(a.size)
+}
+
+// Snapshot returns a copy of the set in O(1) time.  The copy shares storage
+// with a until either is mutated; the mutated set copies the storage first.
+// This allows one goroutine to keep mutating a while another reads the
+// snapshot.
+//
+// Snapshot marks a as shared, so, for concurrency purposes, it is a write
+// to a.
+func (a *Adaptive[T]) Snapshot() *Adaptive[T] {
+	if a.size != 0 {
+		a.shared = true
+	}
+	clone := *a
+	return &clone
 }
 
 func (a *Adaptive[T]) Add(item T) {
@@ -82,11 +104,13 @@ func (a *Adaptive[T]) Add(item T) {
 		// Set was empty so we don't need to check anything to add this item.
 		// We directly store a pointer to the item, which can also be seen
 		// as storing a single-element array.
-		a.p = unsafe.Pointer(&item)
-		a.size = 1
+		a.setStorage(unsafe.Pointer(&item), 1)
 	case sizeStoredInMap:
-		m := a.loadMapFromPointer()
-		m[item] = emptyValue
+		if a.shared && a.Contains(item) {
+			// Avoid copying the map for a no-op.
+			return
+		}
+		a.mutableMap()[item] = emptyValue
 	default:
 		// Sizes 1, 2, ..., adaptiveSetArrayLimit. Stored in an array.
 
@@ -107,10 +131,11 @@ func (a *Adaptive[T]) Add(item T) {
 				// the capacity and keep it in sync with arrCapForSize (allowing
 				// us to avoid storing it).
 				tSlice = growSliceCap(tSlice, arrCapForSize[a.size+1])
-				a.p = unsafe.Pointer(&tSlice[0])
+			} else {
+				tSlice = a.mutableSlice()
 			}
 			tSlice = append(tSlice, item)
-			a.size++
+			a.setStorage(unsafe.Pointer(&tSlice[0]), len(tSlice))
 			return
 		}
 
@@ -120,9 +145,15 @@ func (a *Adaptive[T]) Add(item T) {
 			m[t] = emptyValue
 		}
 		m[item] = emptyValue
-		a.p = unsafe.Pointer(&m)
-		a.size = sizeStoredInMap
+		a.setStorage(unsafe.Pointer(&m), sizeStoredInMap)
 	}
+}
+
+// setStorage points the set at storage that no other set references.
+func (a *Adaptive[T]) setStorage(p unsafe.Pointer, size int) {
+	a.p = p
+	a.size = int8(size)
+	a.shared = false
 }
 
 func growSliceCap[T any](in []T, newCap int) []T {
@@ -153,11 +184,14 @@ func (a *Adaptive[T]) Discard(item T) {
 		// which is equivalent to a single-entry array.
 		theOne := (*T)(a.p)
 		if *theOne == item {
-			a.p = nil
-			a.size = 0
+			a.Clear()
 		}
 	case sizeStoredInMap:
-		m := a.loadMapFromPointer()
+		if a.shared && !a.Contains(item) {
+			// Avoid copying the map for a no-op.
+			return
+		}
+		m := a.mutableMap()
 		delete(m, item)
 		if len(m) <= adaptiveSetArrayLimit {
 			// Too few items for a map, downgrade to an array.
@@ -165,8 +199,7 @@ func (a *Adaptive[T]) Discard(item T) {
 			for t := range m {
 				s = append(s, t)
 			}
-			a.p = unsafe.Pointer(&s[0])
-			a.size = len(m)
+			a.setStorage(unsafe.Pointer(&s[0]), len(m))
 		}
 	default:
 		// Handles sizes 2, 3, ..., adaptiveSetArrayLimit. Stored in an array.
@@ -191,17 +224,18 @@ func (a *Adaptive[T]) Discard(item T) {
 					// Copy the elements before and after the removed element.
 					copy(updatedSlice, tSlice[:i])
 					copy(updatedSlice[i:], tSlice[i+1:])
-					a.p = unsafe.Pointer(&updatedSlice[0])
+					a.setStorage(unsafe.Pointer(&updatedSlice[0]), int(newSize))
 				} else {
 					// Keep the same slice.  Swap the last element into the
 					// removed element's slot.
+					tSlice = a.mutableSlice()
 					tSlice[i] = tSlice[newSize]
 					// Zero the last element to avoid keeping a reference to a
 					// potentially large object.
 					var zeroT T
 					tSlice[newSize] = zeroT
+					a.size = newSize
 				}
-				a.size = newSize
 				return
 			}
 		}
@@ -209,8 +243,7 @@ func (a *Adaptive[T]) Discard(item T) {
 }
 
 func (a *Adaptive[T]) Clear() {
-	a.size = 0
-	a.p = nil
+	a.setStorage(nil, 0)
 }
 
 func (a *Adaptive[T]) Contains(t T) bool {
@@ -324,6 +357,26 @@ func (a *Adaptive[T]) loadMapFromPointer() map[T]v {
 		panic("Adaptive set: trying to load map but size is not sizeStoredInMap")
 	}
 	m := *(*map[T]v)(a.p)
+	return m
+}
+
+// mutableSlice is loadSliceFromPointer for callers that will write in place.
+func (a *Adaptive[T]) mutableSlice() []T {
+	s := a.loadSliceFromPointer()
+	if a.shared {
+		s = growSliceCap(s, cap(s))
+		a.setStorage(unsafe.Pointer(&s[0]), len(s))
+	}
+	return s
+}
+
+// mutableMap is loadMapFromPointer for callers that will write in place.
+func (a *Adaptive[T]) mutableMap() map[T]v {
+	m := a.loadMapFromPointer()
+	if a.shared {
+		m = maps.Clone(m)
+		a.setStorage(unsafe.Pointer(&m), sizeStoredInMap)
+	}
 	return m
 }
 
