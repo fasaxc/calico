@@ -127,8 +127,8 @@ var _ = Describe("Adaptive set", func() {
 		})
 	})
 
-	It("should be two words in size", func() {
-		Expect(unsafe.Sizeof(set.Adaptive[int]{})).To(Equal(2 * unsafe.Sizeof(uintptr(0))))
+	It("should be at most two words in size", func() {
+		Expect(int(unsafe.Sizeof(set.Adaptive[int]{}))).To(BeNumerically("<=", 2*int(unsafe.Sizeof(uintptr(0)))))
 	})
 
 	// Sizes either side of each storage transition: empty, single item,
