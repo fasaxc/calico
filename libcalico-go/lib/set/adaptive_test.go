@@ -134,12 +134,13 @@ var _ = Describe("Adaptive set", func() {
 	// Sizes either side of each storage transition: empty, single item,
 	// array, full array, map.
 	for _, n := range []int{0, 1, 2, 3, 4, 5, 16, 17, 18, 100} {
-		Describe(fmt.Sprintf("Snapshot of a set with %d items", n), func() {
-			var s, snap *set.Adaptive[int]
+		Describe(fmt.Sprintf("Copy of a set with %d items", n), func() {
+			var s *set.Adaptive[int]
+			var snap set.Set[int]
 
 			BeforeEach(func() {
 				s = adaptiveRange(0, n)
-				snap = s.Snapshot()
+				snap = s.Copy()
 			})
 
 			It("should be unaffected by mutating the original", func() {
@@ -165,7 +166,7 @@ var _ = Describe("Adaptive set", func() {
 						default:
 						}
 						if !snap.Equals(expected) {
-							readerErr = fmt.Errorf("snapshot changed to %v", snap)
+							readerErr = fmt.Errorf("copy changed to %v", snap)
 							return
 						}
 					}
@@ -176,7 +177,7 @@ var _ = Describe("Adaptive set", func() {
 					s.Discard(i)
 					if i%10 == 0 {
 						// Re-share the storage so that the next write copies again.
-						_ = s.Snapshot()
+						_ = s.Copy()
 					}
 				}
 				close(done)
@@ -194,7 +195,7 @@ func adaptiveRange(start, end int) *set.Adaptive[int] {
 
 // addAndDiscard adds n..n+19 then discards the even numbers in 0..n+19,
 // exercising in-place writes as well as storage transitions.
-func addAndDiscard(s *set.Adaptive[int], n int) {
+func addAndDiscard(s set.Set[int], n int) {
 	s.AddAll(rangeSlice(n, n+20))
 	for i := 0; i < n+20; i += 2 {
 		s.Discard(i)
@@ -253,7 +254,7 @@ func FuzzAdaptiveSet(f *testing.F) {
 				}
 			}
 		}
-		snap := s1.Snapshot()
+		snap := s1.Copy()
 		snapExpected := s2.Copy()
 
 		stopped := false
@@ -280,7 +281,7 @@ func FuzzAdaptiveSet(f *testing.F) {
 			}
 		}
 		if !snap.Equals(snapExpected) {
-			t.Fatal("Snapshot changed when original was mutated")
+			t.Fatal("Copy changed when original was mutated")
 		}
 	})
 }

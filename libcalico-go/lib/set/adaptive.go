@@ -38,7 +38,7 @@ var arrCapForSize = [adaptiveSetArrayLimit + 1]int{
 //
 // The zero value of Adaptive is an empty set (so it may be embedded in other
 // datastructures).  When embedding, the object must not be copied and then
-// mutated; use Snapshot to make a copy cheaply.
+// mutated; use Copy to make a copy cheaply.
 type Adaptive[T comparable] struct {
 	// p holds different types depending on size.
 	// if size == 0, p is nil.
@@ -55,7 +55,7 @@ type Adaptive[T comparable] struct {
 	size int8
 
 	// shared is true if p's storage may be referenced by another Adaptive
-	// (via Snapshot).  The storage must then be copied before an in-place
+	// (via Copy).  The storage must then be copied before an in-place
 	// write.
 	shared bool
 }
@@ -81,21 +81,6 @@ func (a *Adaptive[T]) Len() int {
 		return len(*(*map[T]v)(a.p))
 	}
 	return int(a.size)
-}
-
-// Snapshot returns a copy of the set in O(1) time.  The copy shares storage
-// with a until either is mutated; the mutated set copies the storage first.
-// This allows one goroutine to keep mutating a while another reads the
-// snapshot.
-//
-// Snapshot marks a as shared, so, for concurrency purposes, it is a write
-// to a.
-func (a *Adaptive[T]) Snapshot() *Adaptive[T] {
-	if a.size != 0 {
-		a.shared = true
-	}
-	clone := *a
-	return &clone
 }
 
 func (a *Adaptive[T]) Add(item T) {
@@ -380,12 +365,17 @@ func (a *Adaptive[T]) mutableMap() map[T]v {
 	return m
 }
 
+// Copy returns a copy of the set in O(1) time.  The copy shares storage with
+// a until either is mutated; the mutated set copies the storage first.  This
+// allows one goroutine to keep mutating a while another uses the copy.
+//
+// Copy marks a as shared, so, for concurrency purposes, it is a write to a.
 func (a *Adaptive[T]) Copy() Set[T] {
-	other := NewAdaptive[T]()
-	for item := range a.All() {
-		other.Add(item)
+	if a.size != 0 {
+		a.shared = true
 	}
-	return other
+	clone := *a
+	return &clone
 }
 
 func (a *Adaptive[T]) Equals(s Set[T]) bool {
